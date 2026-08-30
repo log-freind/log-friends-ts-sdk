@@ -30,7 +30,7 @@ export class MobileTransportSender implements TransportSender {
       });
 
       if (!response.ok) {
-        throw new Error(`Ingest HTTP error: ${response.status} ${response.statusText}`);
+        throw new Error(`Ingest HTTP error: ${String(response.status)} ${response.statusText}`);
       }
 
       const data = (await response.json()) as IngestResponse;
@@ -63,14 +63,15 @@ export class MobileLogFriendsClient extends BaseLogFriendsClient {
       sourceType: "MOBILE",
     };
 
-    let selfRef: MobileLogFriendsClient | null = null;
+    const instance = { current: null as MobileLogFriendsClient | null };
     super(fullConfig, new MobileTransportSender(), async () => {
-      if (selfRef) {
-        await selfRef.ready();
-        selfRef.queue.updateAppInstanceId(selfRef.currentAppInstanceId);
+      const client = instance.current;
+      if (client) {
+        await client.ready();
+        client.queue.updateAppInstanceId(client.currentAppInstanceId);
       }
     });
-    selfRef = this;
+    instance.current = this;
 
     this.storage = config.storageAdapter ?? new InMemoryMobileStorageAdapter();
     this.sessionTimeoutMs = config.sessionTimeoutMs ?? 30 * 60 * 1000;

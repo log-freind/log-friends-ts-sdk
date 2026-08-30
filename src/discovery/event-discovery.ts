@@ -89,14 +89,14 @@ export async function reportDiscoveredEvents(
 
   // Access protected or public config fields from client
   const clientConfig = (client as unknown as { config: { ingestUrl: string; workerId: string } }).config;
-  const ingestUrl = clientConfig?.ingestUrl ?? "http://localhost:8080/ingest";
-  const workerId = clientConfig?.workerId ?? "default-worker";
+  const ingestUrl = clientConfig.ingestUrl;
+  const workerId = clientConfig.workerId;
   const appName = options.appName ?? workerId;
   const appVersion = options.appVersion ?? "1.0.0";
 
   // Build target URL
   const baseUrl = ingestUrl.replace(/\/ingest\/?$/, "");
-  if (options.agentId === undefined || options.agentId === null || options.agentId === "") {
+  if (options.agentId === undefined || options.agentId === "") {
     return {
       success: false,
       received: 0,
@@ -104,7 +104,7 @@ export async function reportDiscoveredEvents(
     };
   }
   const agentId = options.agentId;
-  const reportUrl = `${baseUrl}/api/agents/${agentId}/discovered-log-events`;
+  const reportUrl = `${baseUrl}/api/agents/${String(agentId)}/discovered-log-events`;
 
   const requestBody = {
     workerId,
@@ -128,7 +128,7 @@ export async function reportDiscoveredEvents(
         return {
           success: false,
           received: 0,
-          error: new Error(`Report HTTP ${response.status}: ${response.statusText}`),
+          error: new Error(`Report HTTP ${String(response.status)}: ${response.statusText}`),
         };
       }
 

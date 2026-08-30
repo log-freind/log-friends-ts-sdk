@@ -66,6 +66,40 @@ export interface LogEventOptions {
 
 let globalClient: BaseLogFriendsClient | null = null;
 
+type DecoratedMethod = (this: unknown, ...args: unknown[]) => unknown;
+
+interface LogEventDecorator {
+  (
+    target: object,
+    propertyKey: string | symbol,
+    descriptor: TypedPropertyDescriptor<DecoratedMethod>,
+  ): TypedPropertyDescriptor<DecoratedMethod>;
+  (
+    value: DecoratedMethod,
+    context: ClassMethodDecoratorContext<unknown, DecoratedMethod>,
+  ): DecoratedMethod;
+}
+
+function isLegacyMethodDescriptor(value: unknown): value is TypedPropertyDescriptor<DecoratedMethod> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "value" in value &&
+    typeof (value as { value?: unknown }).value === "function"
+  );
+}
+
+function isStandardMethodContext(
+  value: unknown,
+): value is ClassMethodDecoratorContext<unknown, DecoratedMethod> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    (value as { kind?: unknown }).kind === "method"
+  );
+}
+
 /**
  * Sets the default global client instance for `@LogEvent` decorators.
  */
@@ -84,70 +118,65 @@ export function getGlobalClient(): BaseLogFriendsClient | null {
  * Universal method decorator supporting both TypeScript Stage 3 Standard Decorators
  * and Legacy Experimental Decorators (NestJS / Angular / TS experimentalDecorators).
  */
-export function LogEvent(optionsOrName?: string | LogEventOptions): any {
+export function LogEvent(optionsOrName?: string | LogEventOptions): LogEventDecorator {
   const options: LogEventOptions =
     typeof optionsOrName === "string"
       ? { name: optionsOrName }
       : (optionsOrName ?? {});
 
-  return function (
-    targetOrMethod: any,
-    contextOrPropertyKey?: any,
-    descriptor?: any,
-  ): any {
-    if (descriptor && typeof descriptor.value === "function") {
+  const decorator = (
+    targetOrMethod: unknown,
+    contextOrPropertyKey?: unknown,
+    descriptor?: unknown,
+  ): unknown => {
+    if (isLegacyMethodDescriptor(descriptor)) {
       // Legacy experimental decorator: (target, propertyKey, descriptor)
       const target = targetOrMethod;
-      const originalMethod = descriptor.value as (...args: unknown[]) => unknown;
+      const originalMethod = descriptor.value;
+      if (typeof originalMethod !== "function") return descriptor;
       const propertyKey = String(contextOrPropertyKey);
       const wrapped = wrapMethod(originalMethod, options, propertyKey, target);
-      registerDiscoveredEvent(target, propertyKey, options, wrapped);
+      registerDiscoveredEvent(target, propertyKey, options);
       descriptor.value = wrapped;
       return descriptor;
     } else if (
       typeof targetOrMethod === "function" &&
-      contextOrPropertyKey &&
-      typeof contextOrPropertyKey === "object" &&
-      "kind" in (contextOrPropertyKey as Record<string, unknown>)
+      isStandardMethodContext(contextOrPropertyKey)
     ) {
       // Stage 3 standard decorator: (method, context)
-      const originalMethod = targetOrMethod as (...args: unknown[]) => unknown;
-      const contextName = String(
-        (contextOrPropertyKey as { name?: string | symbol }).name ?? "",
-      );
+      const originalMethod = targetOrMethod as DecoratedMethod;
+      const contextName = String(contextOrPropertyKey.name);
       const wrapped = wrapMethod(originalMethod, options, contextName, undefined);
-      registerDiscoveredEvent(undefined, contextName, options, wrapped);
+      registerDiscoveredEvent(undefined, contextName, options);
       return wrapped;
     } else if (
       typeof targetOrMethod === "function" &&
       typeof contextOrPropertyKey === "string"
     ) {
       // Property descriptor shorthand
-      const originalMethod = targetOrMethod as (...args: unknown[]) => unknown;
+      const originalMethod = targetOrMethod as DecoratedMethod;
       const wrapped = wrapMethod(originalMethod, options, contextOrPropertyKey, undefined);
-      registerDiscoveredEvent(undefined, contextOrPropertyKey, options, wrapped);
+      registerDiscoveredEvent(undefined, contextOrPropertyKey, options);
       return wrapped;
     }
 
     return targetOrMethod;
   };
+
+  return decorator as unknown as LogEventDecorator;
 }
 
 function registerDiscoveredEvent(
   target: unknown,
   propertyKey: string,
   options: LogEventOptions,
-  _method: unknown,
 ): void {
   const resolvedName = (options.name ?? propertyKey).trim();
   if (!isValidEventName(resolvedName)) {
     return;
   }
 
-  const className =
-    target && typeof target === "object" && target.constructor
-      ? target.constructor.name
-      : "Service";
+  const className = getSourceClassName(target);
 
   const paramMetas = target ? parameterMetadataStore.getParameters(target, propertyKey) : [];
 
@@ -183,12 +212,20 @@ function registerDiscoveredEvent(
   });
 }
 
+function getSourceClassName(target: unknown): string {
+  if (typeof target !== "object" || target === null) return "Service";
+  const constructor = (target as { constructor?: unknown }).constructor;
+  return typeof constructor === "function" && constructor.name.length > 0
+    ? constructor.name
+    : "Service";
+}
+
 function wrapMethod(
   originalMethod: (...args: unknown[]) => unknown,
   options: LogEventOptions,
   methodNameFallback: string,
   targetContext?: unknown,
-): (...args: unknown[]) => unknown {
+): DecoratedMethod {
   return function (this: unknown, ...args: unknown[]): unknown {
     const client = options.client ?? globalClient;
 
@@ -212,7 +249,7 @@ function wrapMethod(
     const dispatchEvent = (
       result?: unknown,
       error?: Error,
-    ) => {
+    ): void => {
       if (!client) {
         return;
       }
@@ -222,7 +259,7 @@ function wrapMethod(
         let eventPayload: Record<string, unknown> = {};
 
         if (options.payload) {
-          eventPayload = options.payload(args, result, error) ?? {};
+          eventPayload = options.payload(args, result, error);
         } else {
           if (options.includeArgs !== false && args.length > 0) {
             // Retrieve decorated parameter metadata
@@ -253,7 +290,7 @@ function wrapMethod(
               Object.assign(eventPayload, args[0]);
             } else {
               args.forEach((arg, idx) => {
-                eventPayload[`arg${idx}`] = arg;
+                eventPayload[`arg${String(idx)}`] = arg;
               });
             }
           }

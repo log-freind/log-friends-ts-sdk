@@ -97,7 +97,10 @@ export class BoundedEventQueue {
         break;
       }
 
-      const item = this.items.shift()!;
+      const item = this.items.shift();
+      if (item === undefined) {
+        break;
+      }
       this.currentBytes -= nextBytes;
       batch.push(item);
       batchBytes += nextBytes;

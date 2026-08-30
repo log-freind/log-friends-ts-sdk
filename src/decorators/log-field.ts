@@ -65,7 +65,7 @@ class ParameterMetadataStore {
     const methodMap = this.getOrCreateMethodMap(target, key);
     const existing = methodMap.get(parameterIndex) ?? {
       index: parameterIndex,
-      name: options.name ?? `arg${parameterIndex}`,
+      name: options.name ?? `arg${String(parameterIndex)}`,
       required: options.required ?? true,
       masked: options.masked ?? false,
     };
@@ -90,7 +90,7 @@ class ParameterMetadataStore {
     const methodMap = this.getOrCreateMethodMap(target, key);
     const existing = methodMap.get(parameterIndex) ?? {
       index: parameterIndex,
-      name: name ?? `arg${parameterIndex}`,
+      name: name ?? `arg${String(parameterIndex)}`,
       required: true,
       masked: true,
     };

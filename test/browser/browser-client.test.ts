@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBrowserClient } from "../../src/browser/browser-client.js";
 
+type Listener = () => void;
+
 describe("browser-client", () => {
-  let listeners: Record<string, Function[]> = {};
+  let listeners: Record<string, Listener[]> = {};
 
   beforeEach(() => {
     listeners = {};
     (globalThis as unknown as { window: unknown; document: unknown }).window = {
-      addEventListener: (type: string, fn: Function) => {
+      addEventListener: (type: string, fn: Listener) => {
         listeners[type] = listeners[type] || [];
         listeners[type].push(fn);
       },
-      removeEventListener: (type: string, fn: Function) => {
+      removeEventListener: (type: string, fn: Listener) => {
         listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
       },
       sessionStorage: {
@@ -23,11 +25,11 @@ describe("browser-client", () => {
     };
     (globalThis as unknown as { document: unknown }).document = {
       visibilityState: "visible",
-      addEventListener: (type: string, fn: Function) => {
+      addEventListener: (type: string, fn: Listener) => {
         listeners[type] = listeners[type] || [];
         listeners[type].push(fn);
       },
-      removeEventListener: (type: string, fn: Function) => {
+      removeEventListener: (type: string, fn: Listener) => {
         listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
       },
     };

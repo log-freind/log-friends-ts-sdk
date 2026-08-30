@@ -12,7 +12,7 @@ export interface FieldDefinition {
   /**
    * Expected data type (e.g. 'string', 'number', 'boolean', 'object', 'array').
    */
-  type?: "string" | "number" | "boolean" | "object" | "array" | string;
+  type?: string;
 
   /**
    * Whether this field is mandatory for the event.
@@ -70,16 +70,16 @@ export function defineEvent<T extends Record<string, unknown>>(
   const def: EventDefinition<T> = {
     name: spec.name,
     description: spec.description,
-    fields: spec.fields as Record<string, FieldDefinition>,
+    fields: spec.fields,
   };
 
   // Automatically register in Discovered Event Registry
   const fieldHints = Object.entries(spec.fields).map(([name, fieldDef]) => ({
     name,
-    description: (fieldDef as FieldDefinition).description,
-    type: (fieldDef as FieldDefinition).type,
-    required: (fieldDef as FieldDefinition).required !== false,
-    example: (fieldDef as FieldDefinition).example,
+    description: (fieldDef).description,
+    type: (fieldDef).type,
+    required: (fieldDef).required !== false,
+    example: (fieldDef).example,
   }));
 
   discoveredEventRegistry.registerCustom({
@@ -113,7 +113,7 @@ export function trackEvent<T extends Record<string, unknown>>(
  * Converts a collection of EventDefinitions into a format suitable for Log Friends Console Log Catalog.
  */
 export function exportEventCatalog(
-  events: Array<EventDefinition<Record<string, unknown>>>,
+  events: Array<EventDefinition>,
 ): DiscoveredEventCandidate[] {
   return events.map((def) => ({
     eventName: def.name,

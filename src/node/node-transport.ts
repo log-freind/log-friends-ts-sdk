@@ -12,7 +12,7 @@ export class NodeTransportSender implements TransportSender {
       });
 
       if (!response.ok) {
-        throw new Error(`Ingest HTTP error: ${response.status} ${response.statusText}`);
+        throw new Error(`Ingest HTTP error: ${String(response.status)} ${response.statusText}`);
       }
 
       const data = (await response.json()) as IngestResponse;

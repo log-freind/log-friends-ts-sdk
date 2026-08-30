@@ -26,7 +26,7 @@ const SENSITIVE_KEY_PATTERNS = [
  * Generates a standard UUID v4 string across Browser, Node, and Mobile runtimes.
  */
 export function generateEventId(): string {
-  if (typeof globalThis !== "undefined" && globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+  if (typeof globalThis.crypto.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
   }
   // Fallback RFC4122 version 4 UUID generator
@@ -64,7 +64,7 @@ export function sanitizePayload(
     return { value: sanitizeValue(raw, new WeakSet(), 0, maxDepth) };
   }
 
-  const seen = new WeakSet<object>();
+  const seen = new WeakSet();
   const sanitized = sanitizeValue(raw, seen, 0, maxDepth);
   if (sanitized && typeof sanitized === "object" && !Array.isArray(sanitized)) {
     return sanitized as Record<string, unknown>;
@@ -152,7 +152,7 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number, max
     }
 
     const objResult: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>)) {
+    for (const key of Object.keys(value)) {
       // Protect prototype pollution
       if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
 
@@ -170,7 +170,7 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number, max
     return objResult;
   }
 
-  return String(value);
+  return "[Unsupported value]";
 }
 
 /**

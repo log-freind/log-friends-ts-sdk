@@ -5,7 +5,7 @@ import type { IngestRequest } from "../../src/core/types.js";
 
 describe("mobile-app-instance-race", () => {
   it("ensures initial track calls resolve to stable persistent appInstanceId without race conditions", async () => {
-    let capturedRequests: IngestRequest[] = [];
+    const capturedRequests: IngestRequest[] = [];
 
     // Simulate async storage with 50ms delay
     const mockStorage: MobileStorageAdapter = {

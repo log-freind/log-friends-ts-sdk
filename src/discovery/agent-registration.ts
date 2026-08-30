@@ -23,8 +23,8 @@ export async function registerAgent(
   options: RegisterAgentOptions,
 ): Promise<RegisterAgentResult> {
   const config = (client as unknown as { config: { ingestUrl: string; workerId: string; sdkVersion?: string } }).config;
-  const baseUrl = (config?.ingestUrl ?? "").replace(/\/ingest\/?$/, "");
-  if (!baseUrl || !config?.workerId || !options.appName) {
+  const baseUrl = config.ingestUrl.replace(/\/ingest\/?$/, "");
+  if (!baseUrl || !config.workerId || !options.appName) {
     return { success: false, error: new Error("Log Friends agent registration requires ingestUrl, workerId, and appName.") };
   }
 
@@ -41,7 +41,7 @@ export async function registerAgent(
       }),
     });
     if (!response.ok) {
-      return { success: false, error: new Error(`Agent registration HTTP ${response.status}: ${response.statusText}`) };
+      return { success: false, error: new Error(`Agent registration HTTP ${String(response.status)}: ${response.statusText}`) };
     }
     const body = (await response.json()) as { agentId?: unknown };
     if (typeof body.agentId !== "number" || !Number.isFinite(body.agentId)) {
