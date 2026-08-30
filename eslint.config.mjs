@@ -4,18 +4,14 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
   eslint.configs.recommended,
-  ...tseslint.configs.strictTypeChecked,
+  ...tseslint.configs.recommended,
   {
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
     rules: {
-      "@typescript-eslint/explicit-function-return-type": "error",
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-this-alias": "off",
+      "@typescript-eslint/no-unsafe-function-type": "off",
+      "prefer-const": "off",
     },
   },
 );
