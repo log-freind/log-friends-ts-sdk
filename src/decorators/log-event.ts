@@ -69,15 +69,15 @@ let globalClient: BaseLogFriendsClient | null = null;
 type DecoratedMethod = (this: unknown, ...args: unknown[]) => unknown;
 
 interface LogEventDecorator {
-  (
+  <This, Args extends unknown[], Result>(
     target: object,
     propertyKey: string | symbol,
-    descriptor: TypedPropertyDescriptor<DecoratedMethod>,
-  ): TypedPropertyDescriptor<DecoratedMethod>;
-  (
-    value: DecoratedMethod,
-    context: ClassMethodDecoratorContext<unknown, DecoratedMethod>,
-  ): DecoratedMethod;
+    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Result>,
+  ): TypedPropertyDescriptor<(this: This, ...args: Args) => Result>;
+  <This, Args extends unknown[], Result>(
+    value: (this: This, ...args: Args) => Result,
+    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
+  ): (this: This, ...args: Args) => Result;
 }
 
 function isLegacyMethodDescriptor(value: unknown): value is TypedPropertyDescriptor<DecoratedMethod> {
