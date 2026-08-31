@@ -43,6 +43,9 @@ export interface ParameterMetadata {
 export interface DiscoveredEventSpec {
   eventName: string;
   description?: string;
+  apiMethod?: string;
+  apiPath?: string;
+  apiDescription?: string;
   sourceClass: string;
   sourceMethod: string;
   parameterNames: string[];

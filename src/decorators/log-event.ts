@@ -23,6 +23,15 @@ export interface LogEventOptions {
    */
   description?: string;
 
+  /** HTTP method of the API that initiates this business event. */
+  apiMethod?: string;
+
+  /** Normalized API route template (for example, `/carts/{cartId}/items`). */
+  apiPath?: string;
+
+  /** Optional human-readable explanation of the initiating API. */
+  apiDescription?: string;
+
   /**
    * Explicit field definitions describing the purpose and type of each parameter.
    */
@@ -205,6 +214,9 @@ function registerDiscoveredEvent(
   discoveredEventRegistry.register({
     eventName: resolvedName,
     description: options.description,
+    apiMethod: options.apiMethod,
+    apiPath: options.apiPath,
+    apiDescription: options.apiDescription,
     sourceClass: className,
     sourceMethod: propertyKey,
     parameterNames: fields.map((f) => f.name),

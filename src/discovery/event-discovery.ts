@@ -47,6 +47,9 @@ class DiscoveredEventRegistry {
       parameterNames: spec.parameterNames,
       specHint: {
         description: spec.description,
+        apiMethod: spec.apiMethod,
+        apiPath: spec.apiPath,
+        apiDescription: spec.apiDescription,
         fields: spec.fields.map((f) => ({
           name: f.name,
           description: f.description,

@@ -4,6 +4,7 @@ import {
   getGlobalClient,
   setGlobalClient,
 } from "../../src/decorators/log-event.js";
+import { discoveredEventRegistry } from "../../src/discovery/event-discovery.js";
 import { BaseLogFriendsClient } from "../../src/core/base-client.js";
 import type { IngestRequest, IngestResponse, TransportSender } from "../../src/core/types.js";
 
@@ -52,6 +53,7 @@ describe("@LogEvent Decorator", () => {
   beforeEach(() => {
     client = new TestClient();
     setGlobalClient(client);
+    discoveredEventRegistry.clear();
   });
 
   afterEach(() => {
@@ -108,6 +110,28 @@ describe("@LogEvent Decorator", () => {
     expect(event.payload?.userId).toBe("user-777");
     expect(event.payload?.email).toBe("[REDACTED]");
     expect(event.payload?.plan).toBe("pro");
+  });
+
+  it("reports the API route hint declared with the event", () => {
+    class CartService {
+      @LogEvent({
+        name: "cartItemAdded",
+        apiMethod: "POST",
+        apiPath: "/carts/{cartId}/items",
+        apiDescription: "장바구니 항목 추가",
+      })
+      addItem(): void {}
+    }
+
+    void CartService;
+    expect(discoveredEventRegistry.getAll()).toContainEqual(expect.objectContaining({
+      eventName: "cartItemAdded",
+      specHint: expect.objectContaining({
+        apiMethod: "POST",
+        apiPath: "/carts/{cartId}/items",
+        apiDescription: "장바구니 항목 추가",
+      }),
+    }));
   });
 
   it("flattens single DTO object argument directly into event payload", async () => {
