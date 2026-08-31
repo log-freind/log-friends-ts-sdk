@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBrowserClient } from "../../src/browser/browser-client.js";
 
+type Listener = () => void;
+
 describe("browser-client", () => {
-  let listeners: Record<string, Function[]> = {};
+  let listeners: Record<string, Listener[]> = {};
 
   beforeEach(() => {
     listeners = {};
     (globalThis as unknown as { window: unknown; document: unknown }).window = {
-      addEventListener: (type: string, fn: Function) => {
+      addEventListener: (type: string, fn: Listener) => {
         listeners[type] = listeners[type] || [];
         listeners[type].push(fn);
       },
-      removeEventListener: (type: string, fn: Function) => {
+      removeEventListener: (type: string, fn: Listener) => {
         listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
       },
       sessionStorage: {
@@ -23,11 +25,11 @@ describe("browser-client", () => {
     };
     (globalThis as unknown as { document: unknown }).document = {
       visibilityState: "visible",
-      addEventListener: (type: string, fn: Function) => {
+      addEventListener: (type: string, fn: Listener) => {
         listeners[type] = listeners[type] || [];
         listeners[type].push(fn);
       },
-      removeEventListener: (type: string, fn: Function) => {
+      removeEventListener: (type: string, fn: Listener) => {
         listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
       },
     };
@@ -130,5 +132,29 @@ describe("browser-client", () => {
       client.track("serverEvent", { page: "/home" });
       client.identify("ssr-user");
     }).not.toThrow();
+  });
+
+  it("sends events immediately on client track() without queueing or waiting for timer", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ received: 1, stored: 1, failed: 0 }),
+    });
+    (globalThis as unknown as { fetch: typeof fetchMock }).fetch = fetchMock;
+
+    const client = createBrowserClient({
+      ingestUrl: "https://console.logfriends.local/ingest",
+      workerId: "browser-instant",
+    });
+
+    client.track("leadGenerated", { leadType: "demo_request" });
+
+    // Wait a tick for async flush execution
+    await new Promise((r) => setTimeout(r, 15));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const callArg = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(callArg.events[0].eventName).toBe("leadGenerated");
+
+    await client.shutdown();
   });
 });

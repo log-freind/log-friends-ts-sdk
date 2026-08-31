@@ -42,6 +42,7 @@ export interface ClientConfig {
   maxRetries?: number;
   initialRetryDelayMs?: number;
   maxRetryDelayMs?: number;
+  immediate?: boolean;
   debug?: boolean;
   onError?: (error: Error, context: string) => void;
 }
@@ -68,6 +69,7 @@ export interface TrackOptions {
   eventId?: string;
   sessionId?: string;
   appInstanceId?: string;
+  immediate?: boolean;
 }
 
 export interface TransportSender {

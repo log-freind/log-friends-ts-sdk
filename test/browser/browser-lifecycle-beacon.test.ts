@@ -141,6 +141,7 @@ describe("browser-lifecycle-beacon", () => {
       ingestUrl: "http://localhost:8080/ingest",
       workerId: "browser-stats-worker",
       flushIntervalMs: 0,
+      immediate: false,
     });
 
     client.track("pageHidden", { reason: "navigation" });

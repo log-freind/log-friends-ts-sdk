@@ -126,7 +126,11 @@ export abstract class BaseLogFriendsClient {
         sdkVersion: this.config.sdkVersion ?? "1.0.0",
       };
 
-      return this.flusher.enqueue(event);
+      const enqueued = this.flusher.enqueue(event);
+      if (enqueued && (options.immediate ?? this.config.immediate ?? false)) {
+        void this.flush();
+      }
+      return enqueued;
     } catch (err) {
       this.handleError(err, "track");
       return false;

@@ -1,5 +1,5 @@
 import { BaseLogFriendsClient } from "../core/base-client.js";
-import type { ClientConfig } from "../core/types.js";
+import type { ClientConfig, FlushResult } from "../core/types.js";
 import { NodeTransportSender } from "./node-transport.js";
 
 export interface NodeClientConfig extends Omit<ClientConfig, "sourceType"> {
@@ -30,7 +30,7 @@ export class NodeLogFriendsClient extends BaseLogFriendsClient {
     return undefined;
   }
 
-  public override async shutdown(timeoutMs = 1500) {
+  public override async shutdown(timeoutMs = 1500): Promise<FlushResult> {
     while (this.cleanupCallbacks.length > 0) {
       try {
         this.cleanupCallbacks.pop()?.();
@@ -45,20 +45,20 @@ export class NodeLogFriendsClient extends BaseLogFriendsClient {
     if (config.autoHookProcessSignals === false) return;
     if (typeof process === "undefined" || typeof process.on !== "function") return;
 
-    const handleSignal = async (signal: string) => {
+    const handleSignal = async (signal: string): Promise<void> => {
       if (this.config.debug) {
         console.log(`[Log Friends] Received ${signal}, flushing events before exit...`);
       }
       await this.shutdown(1200);
     };
 
-    const sigtermHandler = () => {
+    const sigtermHandler = (): void => {
       void handleSignal("SIGTERM");
     };
-    const sigintHandler = () => {
+    const sigintHandler = (): void => {
       void handleSignal("SIGINT");
     };
-    const beforeExitHandler = () => {
+    const beforeExitHandler = (): void => {
       void handleSignal("beforeExit");
     };
 
@@ -66,7 +66,7 @@ export class NodeLogFriendsClient extends BaseLogFriendsClient {
     process.once("SIGINT", sigintHandler);
     process.once("beforeExit", beforeExitHandler);
 
-    this.cleanupCallbacks.push(() => {
+    this.cleanupCallbacks.push((): void => {
       process.removeListener("SIGTERM", sigtermHandler);
       process.removeListener("SIGINT", sigintHandler);
       process.removeListener("beforeExit", beforeExitHandler);

@@ -46,8 +46,9 @@ export class BatchFlusher {
       maxRetries: config.maxRetries ?? 3,
       initialRetryDelayMs: config.initialRetryDelayMs ?? 200,
       maxRetryDelayMs: config.maxRetryDelayMs ?? 3000,
+      immediate: config.immediate ?? false,
       debug: config.debug ?? false,
-      onError: config.onError ?? (() => {}),
+      onError: config.onError ?? (() : void => {}),
     };
     this.queue = queue;
     this.sender = sender;
@@ -66,7 +67,7 @@ export class BatchFlusher {
 
     if (!result.accepted) {
       if (this.config.debug) {
-        console.warn(`[Log Friends] Event rejected: ${result.reason}`);
+        console.warn(`[Log Friends] Event rejected: ${result.reason ?? "UNKNOWN"}`);
       }
       return false;
     }
@@ -164,7 +165,7 @@ export class BatchFlusher {
 
             if (this.config.debug) {
               console.warn(
-                `[Log Friends] Server response mismatch. Stored: ${stored}, Failed: ${failed}, Batch: ${batch.length}`,
+                `[Log Friends] Server response mismatch. Stored: ${String(stored)}, Failed: ${String(failed)}, Batch: ${String(batch.length)}`,
               );
             }
           }
@@ -195,11 +196,11 @@ export class BatchFlusher {
   private async sendWithRetry(
     request: IngestRequest,
     options: { keepalive?: boolean },
-  ) {
+  ): Promise<import("./types.js").IngestResponse> {
     let attempt = 0;
     let delay = this.config.initialRetryDelayMs;
 
-    while (true) {
+    for (;;) {
       try {
         return await this.sender.send(this.config.ingestUrl, request, options);
       } catch (err) {
@@ -211,7 +212,7 @@ export class BatchFlusher {
         // Exponential backoff with jitter
         const jitter = Math.random() * 0.3 * delay;
         const sleepMs = Math.min(delay + jitter, this.config.maxRetryDelayMs);
-        await new Promise((resolve) => setTimeout(resolve, sleepMs));
+        await new Promise<void>((resolve) => setTimeout(resolve, sleepMs));
         delay = Math.min(delay * 2, this.config.maxRetryDelayMs);
       }
     }
@@ -245,13 +246,12 @@ export class BatchFlusher {
     const flushPromise = this.flush();
     const timeoutPromise = new Promise<FlushResult>((resolve) =>
       setTimeout(
-        () =>
-          resolve({
+        () => { resolve({
             success: false,
             sentCount: 0,
             failedCount: this.queue.size,
             error: new Error("Shutdown flush timeout exceeded"),
-          }),
+          }); },
         timeoutMs,
       ),
     );

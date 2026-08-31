@@ -26,6 +26,8 @@ describe("sanitizer-pii-credentials", () => {
     expect(isSensitiveKey("secret")).toBe(true);
     expect(isSensitiveKey("accessToken")).toBe(true);
     expect(isSensitiveKey("refresh_token")).toBe(true);
+    expect(isSensitiveKey("threadSecret")).toBe(true);
+    expect(isSensitiveKey("editToken")).toBe(true);
     expect(isSensitiveKey("creditCard")).toBe(true);
 
     expect(isSensitiveKey("userName")).toBe(false);
@@ -39,6 +41,8 @@ describe("sanitizer-pii-credentials", () => {
       cookie: "SESSION=abcde",
       details: {
         accessToken: "tok_secret_999",
+        threadSecret: "thread-secret",
+        editToken: "edit-token",
         safeNote: "Please deliver to porch",
       },
     };
@@ -49,6 +53,8 @@ describe("sanitizer-pii-credentials", () => {
     expect(sanitized.authorization).toBe("[REDACTED]");
     expect(sanitized.cookie).toBe("[REDACTED]");
     expect((sanitized.details as Record<string, unknown>).accessToken).toBe("[REDACTED]");
+    expect((sanitized.details as Record<string, unknown>).threadSecret).toBe("[REDACTED]");
+    expect((sanitized.details as Record<string, unknown>).editToken).toBe("[REDACTED]");
     expect((sanitized.details as Record<string, unknown>).safeNote).toBe("Please deliver to porch");
   });
 

@@ -1,5 +1,5 @@
 import { BaseLogFriendsClient } from "../core/base-client.js";
-import type { ClientConfig } from "../core/types.js";
+import type { ClientConfig, FlushResult } from "../core/types.js";
 import { BrowserSessionManager, type BrowserSessionConfig } from "./browser-session-manager.js";
 import { BrowserTransportSender } from "./browser-transport.js";
 
@@ -14,6 +14,7 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
 
   constructor(config: BrowserClientConfig) {
     const fullConfig: ClientConfig = {
+      immediate: config.immediate ?? true,
       ...config,
       sourceType: "BROWSER",
     };
@@ -43,7 +44,7 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
     return this.sessionManager.resetSession();
   }
 
-  public override async shutdown(timeoutMs = 1500) {
+  public override async shutdown(timeoutMs = 1500): Promise<FlushResult> {
     this.cleanupListeners();
     return super.shutdown(timeoutMs);
   }
@@ -54,29 +55,28 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
     }
 
     if (config.autoTrackOnline !== false) {
-      const handleOnline = () => {
+      const handleOnline = (): void => {
         void this.flush();
       };
       window.addEventListener("online", handleOnline);
-      this.cleanupCallbacks.push(() => window.removeEventListener("online", handleOnline));
+      this.cleanupCallbacks.push((): void => { window.removeEventListener("online", handleOnline); });
     }
 
     if (config.autoTrackVisibility !== false) {
-      const handleVisibilityChange = () => {
+      const handleVisibilityChange = (): void => {
         if (document.visibilityState === "hidden") {
           void this.flush({ keepalive: true });
         }
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
-      this.cleanupCallbacks.push(() =>
-        document.removeEventListener("visibilitychange", handleVisibilityChange),
+      this.cleanupCallbacks.push((): void => { document.removeEventListener("visibilitychange", handleVisibilityChange); },
       );
 
-      const handlePageHide = () => {
+      const handlePageHide = (): void => {
         void this.flush({ keepalive: true });
       };
       window.addEventListener("pagehide", handlePageHide);
-      this.cleanupCallbacks.push(() => window.removeEventListener("pagehide", handlePageHide));
+      this.cleanupCallbacks.push((): void => { window.removeEventListener("pagehide", handlePageHide); });
     }
   }
 

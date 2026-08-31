@@ -1,6 +1,6 @@
 {
   "name": "@logfriends/sdk",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "type": "module",
   "description": "Log Friends Multi-Runtime TypeScript Client SDK for Browser, Mobile, and Node.js",
   "main": "./dist/index.cjs",
@@ -26,12 +26,32 @@
       "types": "./dist/node/index.d.ts",
       "import": "./dist/node/index.js",
       "require": "./dist/node/index.cjs"
+    },
+    "./decorators": {
+      "types": "./dist/decorators/index.d.ts",
+      "import": "./dist/decorators/index.js",
+      "require": "./dist/decorators/index.cjs"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "import": "./dist/schema/index.js",
+      "require": "./dist/schema/index.cjs"
+    },
+    "./discovery": {
+      "types": "./dist/discovery/index.d.ts",
+      "import": "./dist/discovery/index.js",
+      "require": "./dist/discovery/index.cjs"
     }
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
   "engines": {
     "node": ">=18.0.0"
   },
@@ -39,7 +59,10 @@
     "build": "node ./scripts/build-dual.js",
     "lint": "eslint src test",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run lint && npm test && npm run build && node ./scripts/verify-pack.js",
+    "pack:dry": "npm pack --dry-run",
+    "verify-pack": "node ./scripts/verify-pack.js"
   },
   "keywords": [
     "log-friends",
@@ -57,6 +80,7 @@
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.68.0",
     "vitest": "^3.2.7"
   }
 }
