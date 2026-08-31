@@ -1,16 +1,28 @@
 import { BaseLogFriendsClient } from "../core/base-client.js";
 import type { ClientConfig, FlushResult } from "../core/types.js";
+import { registerAgent, type RegisterAgentResult } from "../discovery/agent-registration.js";
+import { reportDiscoveredEvents } from "../discovery/event-discovery.js";
 import { BrowserSessionManager, type BrowserSessionConfig } from "./browser-session-manager.js";
 import { BrowserTransportSender } from "./browser-transport.js";
 
 export interface BrowserClientConfig extends Omit<ClientConfig, "sourceType">, BrowserSessionConfig {
   autoTrackVisibility?: boolean;
   autoTrackOnline?: boolean;
+  /** Register this browser worker and report defined event schemas after client startup. */
+  autoRegister?: boolean | BrowserAutoRegistrationOptions;
+}
+
+export interface BrowserAutoRegistrationOptions {
+  appName?: string;
+  appVersion?: string;
+  metadata?: Record<string, unknown>;
+  reportDiscoveredEvents?: boolean;
 }
 
 export class BrowserLogFriendsClient extends BaseLogFriendsClient {
   private readonly sessionManager: BrowserSessionManager;
   private readonly cleanupCallbacks: Array<() => void> = [];
+  private readonly registrationPromise?: Promise<RegisterAgentResult>;
 
   constructor(config: BrowserClientConfig) {
     const fullConfig: ClientConfig = {
@@ -26,6 +38,7 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
     });
 
     this.setupBrowserListeners(config);
+    this.registrationPromise = this.startAutoRegistration(config.autoRegister);
   }
 
   protected override resolveSessionId(): string {
@@ -42,6 +55,11 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
 
   public resetSession(): string {
     return this.sessionManager.resetSession();
+  }
+
+  /** Resolves when optional startup agent registration has completed. */
+  public getRegistrationPromise(): Promise<RegisterAgentResult> | undefined {
+    return this.registrationPromise;
   }
 
   public override async shutdown(timeoutMs = 1500): Promise<FlushResult> {
@@ -78,6 +96,44 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
       window.addEventListener("pagehide", handlePageHide);
       this.cleanupCallbacks.push((): void => { window.removeEventListener("pagehide", handlePageHide); });
     }
+  }
+
+  private startAutoRegistration(
+    option: BrowserClientConfig["autoRegister"],
+  ): Promise<RegisterAgentResult> | undefined {
+    if (!option || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const options: BrowserAutoRegistrationOptions = option === true ? {} : option;
+    return registerAgent(this, {
+      appName: options.appName ?? this.config.workerId,
+      appVersion: options.appVersion,
+      sourceType: "BROWSER",
+      metadata: options.metadata,
+    }).then(async (result) => {
+      if (!result.success || result.agentId === undefined) {
+        this.handleError(result.error ?? new Error("Browser agent registration failed"), "registerAgent");
+        return result;
+      }
+
+      if (options.reportDiscoveredEvents !== false) {
+        const report = await reportDiscoveredEvents(this, {
+          appName: options.appName ?? this.config.workerId,
+          appVersion: options.appVersion,
+          agentId: result.agentId,
+        });
+        if (!report.success) {
+          this.handleError(report.error ?? new Error("Browser event schema report failed"), "reportDiscoveredEvents");
+        }
+      }
+
+      return result;
+    }).catch((error: unknown) => {
+      const resolvedError = error instanceof Error ? error : new Error(String(error));
+      this.handleError(resolvedError, "registerAgent");
+      return { success: false, error: resolvedError };
+    });
   }
 
   private cleanupListeners(): void {

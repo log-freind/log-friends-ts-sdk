@@ -75,6 +75,38 @@ describe("browser-client", () => {
     await client.shutdown();
   });
 
+  it("registers the browser worker on startup when autoRegister is enabled", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      statusText: "Created",
+      json: async () => ({ agentId: 42 }),
+    });
+    (globalThis as unknown as { fetch: typeof fetchMock }).fetch = fetchMock;
+
+    const client = createBrowserClient({
+      ingestUrl: "https://console.logfriends.local/ingest",
+      workerId: "michi-frontend",
+      autoRegister: {
+        appName: "michi",
+        reportDiscoveredEvents: false,
+      },
+    });
+
+    await expect(client.getRegistrationPromise()).resolves.toEqual({ success: true, agentId: 42 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://console.logfriends.local/api/agents",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      workerId: "michi-frontend",
+      appName: "michi",
+      sourceType: "BROWSER",
+    });
+
+    await client.shutdown();
+  });
+
   it("handles online recovery event by triggering flush", async () => {
     const client = createBrowserClient({
       ingestUrl: "https://console.logfriends.local/ingest",
