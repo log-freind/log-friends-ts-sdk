@@ -3,6 +3,7 @@ export * from "./core/event-sanitizer.js";
 export * from "./core/bounded-event-queue.js";
 export * from "./core/batch-flusher.js";
 export * from "./core/base-client.js";
+export * from "./version.js";
 
 // Decorators, Schemas & Discovery
 export * from "./decorators/index.js";

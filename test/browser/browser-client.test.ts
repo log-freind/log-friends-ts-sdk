@@ -22,6 +22,11 @@ describe("browser-client", () => {
         removeItem: () => {},
         clear: () => {},
       },
+      location: {
+        pathname: "/trips/new",
+        search: "?theme=food",
+        hash: "",
+      },
     };
     (globalThis as unknown as { document: unknown }).document = {
       visibilityState: "visible",
@@ -71,11 +76,42 @@ describe("browser-client", () => {
       id: "user-123",
       traits: { plan: "pro" },
     });
+    expect(callArg.events[0].uiContext).toEqual({ page: "/trips/new?theme=food" });
 
     await client.shutdown();
   });
 
-  it("registers the browser worker on startup when autoRegister is enabled", async () => {
+  it("keeps page and component ancestry outside the business payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ received: 1, stored: 1, failed: 0 }),
+    });
+    (globalThis as unknown as { fetch: typeof fetchMock }).fetch = fetchMock;
+
+    const client = createBrowserClient({
+      ingestUrl: "https://console.logfriends.local/ingest",
+      workerId: "browser-app-prod",
+      batchSize: 1,
+    });
+
+    client.track("tripRequested", { budget: 80000 }, {
+      uiContext: { componentPath: ["TripForm", "SubmitButton"] },
+    });
+    await client.flush();
+
+    const event = JSON.parse(fetchMock.mock.calls[0][1].body).events[0];
+    expect(event.payload).toEqual({ budget: 80000 });
+    expect(event.uiContext).toEqual({
+      page: "/trips/new?theme=food",
+      component: "SubmitButton",
+      parentComponent: "TripForm",
+      componentPath: ["TripForm", "SubmitButton"],
+    });
+
+    await client.shutdown();
+  });
+
+  it("keeps legacy Browser Agent registration opt-in for compatibility", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 201,

@@ -1,5 +1,5 @@
 import { BaseLogFriendsClient } from "../core/base-client.js";
-import type { ClientConfig, FlushResult } from "../core/types.js";
+import type { ClientConfig, FlushResult, TrackOptions, UiContext } from "../core/types.js";
 import { registerAgent, type RegisterAgentResult } from "../discovery/agent-registration.js";
 import { reportDiscoveredEvents } from "../discovery/event-discovery.js";
 import { BrowserSessionManager, type BrowserSessionConfig } from "./browser-session-manager.js";
@@ -8,7 +8,10 @@ import { BrowserTransportSender } from "./browser-transport.js";
 export interface BrowserClientConfig extends Omit<ClientConfig, "sourceType">, BrowserSessionConfig {
   autoTrackVisibility?: boolean;
   autoTrackOnline?: boolean;
-  /** Register this browser worker and report defined event schemas after client startup. */
+  /**
+   * Deprecated: Browser clients are not server Agents. Keep disabled until the
+   * Console exposes a dedicated Browser App registration model.
+   */
   autoRegister?: boolean | BrowserAutoRegistrationOptions;
 }
 
@@ -35,6 +38,7 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
     this.sessionManager = new BrowserSessionManager({
       sessionTimeoutMs: config.sessionTimeoutMs,
       initialSessionId: config.initialSessionId,
+      storageKeyPrefix: config.storageKeyPrefix ?? `logfriends_${config.workerId}`,
     });
 
     this.setupBrowserListeners(config);
@@ -51,6 +55,21 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
 
   public getSessionId(): string {
     return this.sessionManager.getSessionId();
+  }
+
+  /**
+   * Browser events automatically include the current route. Add component metadata
+   * through `options.uiContext` when a React component emits the event.
+   */
+  public override track(
+    eventName: string,
+    payload?: Record<string, unknown>,
+    options: TrackOptions = {},
+  ): boolean {
+    return super.track(eventName, payload, {
+      ...options,
+      uiContext: this.resolveUiContext(options.uiContext),
+    });
   }
 
   public resetSession(): string {
@@ -96,6 +115,12 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
       window.addEventListener("pagehide", handlePageHide);
       this.cleanupCallbacks.push((): void => { window.removeEventListener("pagehide", handlePageHide); });
     }
+  }
+
+  private resolveUiContext(context: UiContext | undefined): UiContext | undefined {
+    const page = context?.page ?? currentBrowserPage();
+    if (!page && !context) return undefined;
+    return { ...context, ...(page ? { page } : {}) };
   }
 
   private startAutoRegistration(
@@ -146,6 +171,11 @@ export class BrowserLogFriendsClient extends BaseLogFriendsClient {
       }
     }
   }
+}
+
+function currentBrowserPage(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
 export function createBrowserClient(config: BrowserClientConfig): BrowserLogFriendsClient {

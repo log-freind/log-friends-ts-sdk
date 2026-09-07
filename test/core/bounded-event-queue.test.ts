@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BoundedEventQueue } from "../../src/core/bounded-event-queue.js";
+import { estimateByteSize } from "../../src/core/event-sanitizer.js";
 import type { ClientEvent } from "../../src/core/types.js";
 
 function makeEvent(index: number, payloadSize = 10): ClientEvent {
@@ -89,5 +90,29 @@ describe("bounded-event-queue", () => {
     expect(queue.size).toBe(4);
     const drained = queue.drain(10);
     expect(drained.map((e) => e.eventId)).toEqual(["evt-1", "evt-2", "evt-3", "evt-4"]);
+  });
+
+  it("keeps drained batch bytes reserved until delivery settles", () => {
+    const first = makeEvent(1, 100);
+    const second = makeEvent(2, 100);
+    const eventBytes = estimateByteSize(first);
+    const queue = new BoundedEventQueue({
+      maxSize: 10,
+      maxBytes: eventBytes,
+      overflowPolicy: "DROP_NEWEST",
+    });
+
+    queue.push(first);
+    const batch = queue.takeBatch(1);
+
+    expect(queue.bytes).toBe(0);
+    expect(queue.deliveringBytes).toBe(eventBytes);
+    expect(queue.retainedBytes).toBe(eventBytes);
+    expect(queue.push(second)).toMatchObject({ accepted: false, reason: "QUEUE_FULL" });
+
+    queue.releaseBatch(batch.byteSize);
+
+    expect(queue.retainedBytes).toBe(0);
+    expect(queue.push(second)).toMatchObject({ accepted: true, droppedCount: 0 });
   });
 });

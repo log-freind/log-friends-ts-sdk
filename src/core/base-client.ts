@@ -14,6 +14,7 @@ import type {
   TransportSender,
   UserTraits,
 } from "./types.js";
+import { SDK_VERSION } from "../version.js";
 
 export abstract class BaseLogFriendsClient {
   protected readonly config: ClientConfig;
@@ -27,6 +28,7 @@ export abstract class BaseLogFriendsClient {
     config: ClientConfig,
     sender: TransportSender,
     beforeFlushHook?: () => Promise<void>,
+    admissionGuard?: () => boolean,
   ) {
     this.config = config;
     this.queue = new BoundedEventQueue({
@@ -35,7 +37,7 @@ export abstract class BaseLogFriendsClient {
       maxEventBytes: config.maxEventBytes,
       overflowPolicy: config.queueOverflowPolicy,
     });
-    this.flusher = new BatchFlusher(config, this.queue, sender, beforeFlushHook);
+    this.flusher = new BatchFlusher(config, this.queue, sender, beforeFlushHook, admissionGuard);
   }
 
   /**
@@ -123,7 +125,8 @@ export abstract class BaseLogFriendsClient {
         sessionId,
         appInstanceId,
         sdkName: this.config.sdkName ?? "@logfriends/sdk",
-        sdkVersion: this.config.sdkVersion ?? "1.0.0",
+        sdkVersion: this.config.sdkVersion ?? SDK_VERSION,
+        ...(options.uiContext ? { uiContext: sanitizeUiContext(options.uiContext) } : {}),
       };
 
       const enqueued = this.flusher.enqueue(event);
@@ -169,6 +172,10 @@ export abstract class BaseLogFriendsClient {
         queued: 0,
         inFlight: 0,
         accounted: 0,
+        queuedBytes: 0,
+        inFlightBytes: 0,
+        retainedBytes: 0,
+        maxQueueBytes: this.config.maxQueueBytes ?? 2 * 1024 * 1024,
       };
     }
   }
@@ -211,4 +218,26 @@ export abstract class BaseLogFriendsClient {
       console.error(`[Log Friends] Error in ${context}:`, error);
     }
   }
+}
+
+function sanitizeUiContext(context: TrackOptions["uiContext"]): TrackOptions["uiContext"] {
+  if (!context) return undefined;
+
+  const text = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 300) : undefined;
+  const componentPath = Array.isArray(context.componentPath)
+    ? context.componentPath.map(text).filter((value): value is string => value !== undefined).slice(0, 32)
+    : undefined;
+  const component = text(context.component) ?? componentPath?.at(-1);
+  const parentComponent = text(context.parentComponent) ??
+    (componentPath && componentPath.length > 1 ? componentPath.at(-2) : undefined);
+  const page = text(context.page);
+
+  if (!page && !component && !parentComponent && !componentPath?.length) return undefined;
+  return {
+    ...(page ? { page } : {}),
+    ...(component ? { component } : {}),
+    ...(parentComponent ? { parentComponent } : {}),
+    ...(componentPath?.length ? { componentPath } : {}),
+  };
 }

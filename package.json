@@ -1,6 +1,6 @@
 {
   "name": "@logfriends/sdk",
-  "version": "1.0.9",
+  "version": "1.0.12",
   "type": "module",
   "description": "Log Friends Multi-Runtime TypeScript Client SDK for Browser, Mobile, and Node.js",
   "main": "./dist/index.cjs",

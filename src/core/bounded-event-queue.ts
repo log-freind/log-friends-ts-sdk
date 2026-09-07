@@ -14,9 +14,28 @@ export interface PushResult {
   reason?: "EVENT_TOO_LARGE" | "QUEUE_FULL";
 }
 
+export interface DrainedEventBatch {
+  events: ClientEvent[];
+  /** UTF-8 serialized byte estimate retained by this batch until it settles. */
+  byteSize: number;
+}
+
+/**
+ * A named wrapper makes Log Friends queue entries discoverable in a Node V8
+ * heap snapshot. It also caches the serialized-byte estimate so drain and
+ * overflow handling do not serialize the same event repeatedly.
+ */
+class LogFriendsQueueEntry {
+  constructor(
+    public readonly event: ClientEvent,
+    public readonly byteSize: number,
+  ) {}
+}
+
 export class BoundedEventQueue {
-  private items: ClientEvent[] = [];
+  private items: LogFriendsQueueEntry[] = [];
   private currentBytes = 0;
+  private inFlightBytes = 0;
   private readonly maxSize: number;
   private readonly maxBytes: number;
   private readonly maxEventBytes: number;
@@ -37,6 +56,19 @@ export class BoundedEventQueue {
     return this.currentBytes;
   }
 
+  /** Bytes held by queued events and batches currently being delivered. */
+  public get retainedBytes(): number {
+    return this.currentBytes + this.inFlightBytes;
+  }
+
+  public get deliveringBytes(): number {
+    return this.inFlightBytes;
+  }
+
+  public get byteCapacity(): number {
+    return this.maxBytes;
+  }
+
   public push(event: ClientEvent): PushResult {
     const eventBytes = estimateByteSize(event);
 
@@ -53,9 +85,11 @@ export class BoundedEventQueue {
     // Check if adding this exceeds bounds
     while (
       this.items.length >= this.maxSize ||
-      (this.items.length > 0 && this.currentBytes + eventBytes > this.maxBytes)
+      this.retainedBytes + eventBytes > this.maxBytes
     ) {
-      if (this.overflowPolicy === "DROP_NEWEST") {
+      // An in-flight batch can consume the entire byte budget. It cannot be
+      // evicted safely, so the new event must be rejected even for DROP_OLDEST.
+      if (this.overflowPolicy === "DROP_NEWEST" || this.items.length === 0) {
         return {
           accepted: false,
           droppedCount: 1,
@@ -66,12 +100,12 @@ export class BoundedEventQueue {
       // DROP_OLDEST
       const oldest = this.items.shift();
       if (oldest) {
-        this.currentBytes -= estimateByteSize(oldest);
+        this.currentBytes -= oldest.byteSize;
         droppedCount++;
       }
     }
 
-    this.items.push(event);
+    this.items.push(new LogFriendsQueueEntry(event, eventBytes));
     this.currentBytes += eventBytes;
 
     return {
@@ -81,8 +115,16 @@ export class BoundedEventQueue {
   }
 
   public drain(maxCount: number, maxBatchBytes?: number): ClientEvent[] {
+    const batch = this.takeBatch(maxCount, maxBatchBytes);
+    // `drain` remains a convenience API for callers that do not send the
+    // batch asynchronously. BatchFlusher uses takeBatch/releaseBatch instead.
+    this.releaseBatch(batch.byteSize);
+    return batch.events;
+  }
+
+  public takeBatch(maxCount: number, maxBatchBytes?: number): DrainedEventBatch {
     if (this.items.length === 0 || maxCount <= 0) {
-      return [];
+      return { events: [], byteSize: 0 };
     }
 
     const batch: ClientEvent[] = [];
@@ -90,19 +132,19 @@ export class BoundedEventQueue {
     const effectiveMaxBatchBytes = maxBatchBytes ?? Infinity;
 
     while (this.items.length > 0 && batch.length < maxCount) {
-      const nextEvent = this.items[0];
-      const nextBytes = estimateByteSize(nextEvent);
+      const nextEntry = this.items[0];
+      const nextBytes = nextEntry.byteSize;
 
       if (batch.length > 0 && batchBytes + nextBytes > effectiveMaxBatchBytes) {
         break;
       }
 
-      const item = this.items.shift();
-      if (item === undefined) {
+      const entry = this.items.shift();
+      if (entry === undefined) {
         break;
       }
       this.currentBytes -= nextBytes;
-      batch.push(item);
+      batch.push(entry.event);
       batchBytes += nextBytes;
     }
 
@@ -111,7 +153,12 @@ export class BoundedEventQueue {
       this.currentBytes = 0;
     }
 
-    return batch;
+    this.inFlightBytes += batchBytes;
+    return { events: batch, byteSize: batchBytes };
+  }
+
+  public releaseBatch(byteSize: number): void {
+    this.inFlightBytes = Math.max(0, this.inFlightBytes - byteSize);
   }
 
   public prepend(events: ClientEvent[]): number {
@@ -122,21 +169,21 @@ export class BoundedEventQueue {
 
       if (
         this.items.length >= this.maxSize ||
-        this.currentBytes + eventBytes > this.maxBytes
+        this.retainedBytes + eventBytes > this.maxBytes
       ) {
-        if (this.overflowPolicy === "DROP_NEWEST") {
+        if (this.overflowPolicy === "DROP_NEWEST" || this.items.length === 0) {
           droppedCount++;
           continue;
         }
         // DROP_OLDEST (which is at the end of queue when prepending)
         const dropped = this.items.pop();
         if (dropped) {
-          this.currentBytes -= estimateByteSize(dropped);
+          this.currentBytes -= dropped.byteSize;
           droppedCount++;
         }
       }
 
-      this.items.unshift(event);
+      this.items.unshift(new LogFriendsQueueEntry(event, eventBytes));
       this.currentBytes += eventBytes;
     }
     return droppedCount;
@@ -144,12 +191,13 @@ export class BoundedEventQueue {
 
   public updateAppInstanceId(appInstanceId: string): void {
     for (const item of this.items) {
-      item.appInstanceId = appInstanceId;
+      item.event.appInstanceId = appInstanceId;
     }
   }
 
   public clear(): void {
     this.items = [];
     this.currentBytes = 0;
+    this.inFlightBytes = 0;
   }
 }

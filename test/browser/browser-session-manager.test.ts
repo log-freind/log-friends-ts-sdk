@@ -64,4 +64,28 @@ describe("browser-session-manager", () => {
     const s2 = manager.getSessionId();
     expect(s1).toBe(s2);
   });
+
+  it("falls back to memory when the sessionStorage getter throws", () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        get sessionStorage(): Storage {
+          throw new DOMException("blocked", "SecurityError");
+        },
+      },
+    });
+
+    const manager = new BrowserSessionManager();
+    const s1 = manager.getSessionId();
+    expect(manager.getSessionId()).toBe(s1);
+  });
+
+  it("isolates sessions by storage key prefix", () => {
+    const frontend = new BrowserSessionManager({ storageKeyPrefix: "logfriends_michi-web" });
+    const admin = new BrowserSessionManager({ storageKeyPrefix: "logfriends_michi-admin" });
+
+    expect(frontend.getSessionId()).not.toBe(admin.getSessionId());
+    expect(mockStorage).toHaveProperty("logfriends_michi-web_session_id");
+    expect(mockStorage).toHaveProperty("logfriends_michi-admin_session_id");
+  });
 });

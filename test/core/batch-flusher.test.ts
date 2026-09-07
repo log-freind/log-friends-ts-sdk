@@ -137,10 +137,15 @@ describe("batch-flusher", () => {
     const f2 = flusher.flush();
 
     expect(f1).toBe(f2); // Exactly same promise shared
+    const inFlightStats = flusher.getStats();
+    expect(inFlightStats.queuedBytes).toBe(0);
+    expect(inFlightStats.inFlightBytes).toBeGreaterThan(0);
+    expect(inFlightStats.retainedBytes).toBe(inFlightStats.inFlightBytes);
 
     resolveSend!({ received: 1, stored: 1, failed: 0 });
     const [r1, r2] = await Promise.all([f1, f2]);
     expect(r1.success).toBe(true);
     expect(r2.success).toBe(true);
+    expect(flusher.getStats().retainedBytes).toBe(0);
   });
 });

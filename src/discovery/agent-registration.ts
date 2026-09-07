@@ -1,4 +1,5 @@
 import type { BaseLogFriendsClient } from "../core/base-client.js";
+import { SDK_VERSION } from "../version.js";
 
 export interface RegisterAgentOptions {
   appName: string;
@@ -35,9 +36,12 @@ export async function registerAgent(
       body: JSON.stringify({
         workerId: config.workerId,
         appName: options.appName,
-        sdkVersion: options.appVersion ?? config.sdkVersion ?? "1.0.0",
+        sdkVersion: config.sdkVersion ?? SDK_VERSION,
         sourceType: options.sourceType ?? "NODE",
-        metadata: options.metadata ?? {},
+        metadata: {
+          ...(options.metadata ?? {}),
+          ...(options.appVersion ? { appVersion: options.appVersion } : {}),
+        },
       }),
     });
     if (!response.ok) {

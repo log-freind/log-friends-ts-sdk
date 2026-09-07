@@ -30,7 +30,11 @@ describe("registerAgent", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await registerAgent(new TestClient(), { appName: "michi", sourceType: "NODE" });
+    const result = await registerAgent(new TestClient(), {
+      appName: "michi",
+      appVersion: "2.4.0",
+      sourceType: "NODE",
+    });
 
     expect(result).toEqual({ success: true, agentId: 37 });
     expect(fetchMock).toHaveBeenCalledWith(
@@ -41,6 +45,8 @@ describe("registerAgent", () => {
       workerId: "michi-backend",
       appName: "michi",
       sourceType: "NODE",
+      sdkVersion: "1.0.12",
+      metadata: { appVersion: "2.4.0" },
     });
   });
 });

@@ -26,8 +26,9 @@ const SENSITIVE_KEY_PATTERNS = [
  * Generates a standard UUID v4 string across Browser, Node, and Mobile runtimes.
  */
 export function generateEventId(): string {
-  if (typeof globalThis.crypto.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
+  const runtimeCrypto = (globalThis as { crypto?: Crypto }).crypto;
+  if (runtimeCrypto && typeof runtimeCrypto.randomUUID === "function") {
+    return runtimeCrypto.randomUUID();
   }
   // Fallback RFC4122 version 4 UUID generator
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {

@@ -12,6 +12,7 @@ export class BatchFlusher {
   private readonly config: Required<ClientConfig>;
   private readonly queue: BoundedEventQueue;
   private readonly sender: TransportSender;
+  private readonly admissionGuard?: () => boolean;
 
   private timerId: ReturnType<typeof setInterval> | null = null;
   private inFlightPromise: Promise<FlushResult> | null = null;
@@ -29,6 +30,7 @@ export class BatchFlusher {
     queue: BoundedEventQueue,
     sender: TransportSender,
     beforeFlushHook?: () => Promise<void>,
+    admissionGuard?: () => boolean,
   ) {
     this.config = {
       ingestUrl: config.ingestUrl,
@@ -53,12 +55,21 @@ export class BatchFlusher {
     this.queue = queue;
     this.sender = sender;
     this.beforeFlushHook = beforeFlushHook;
+    this.admissionGuard = admissionGuard;
 
     this.startTimer();
   }
 
   public enqueue(event: ClientEvent): boolean {
     this.capturedCount++;
+
+    if (this.admissionGuard && !this.admissionGuard()) {
+      this.droppedCount++;
+      if (this.config.debug) {
+        console.warn("[Log Friends] Event rejected by runtime memory guard.");
+      }
+      return false;
+    }
 
     const result = this.queue.push(event);
     if (result.droppedCount > 0) {
@@ -94,6 +105,10 @@ export class BatchFlusher {
       queued,
       inFlight,
       accounted: sent + dropped + queued + inFlight,
+      queuedBytes: this.queue.bytes,
+      inFlightBytes: this.queue.deliveringBytes,
+      retainedBytes: this.queue.retainedBytes,
+      maxQueueBytes: this.queue.byteCapacity,
     };
   }
 
@@ -124,39 +139,39 @@ export class BatchFlusher {
     let lastError: Error | undefined;
 
     while (this.queue.size > 0) {
-      const batch = this.queue.drain(this.config.batchSize, this.config.maxBatchBytes);
-      if (batch.length === 0) break;
+      const batch = this.queue.takeBatch(this.config.batchSize, this.config.maxBatchBytes);
+      if (batch.events.length === 0) break;
 
-      this.inFlightCount += batch.length;
+      this.inFlightCount += batch.events.length;
 
       const requestBody: IngestRequest = {
         workerId: this.config.workerId,
-        events: batch,
+        events: batch.events,
       };
 
       try {
         const response = await this.sendWithRetry(requestBody, options);
-        this.inFlightCount -= batch.length;
+        this.inFlightCount -= batch.events.length;
 
         if (response.acknowledged) {
           // Browser queued via sendBeacon: acknowledged by client transport
-          this.sentCount += batch.length;
-          totalSent += batch.length;
-          totalAcknowledged += batch.length;
+          this.sentCount += batch.events.length;
+          totalSent += batch.events.length;
+          totalAcknowledged += batch.events.length;
         } else {
           // Standard server HTTP response
           const stored = typeof response.stored === "number" ? Math.max(0, response.stored) : 0;
           const failed = typeof response.failed === "number" ? Math.max(0, response.failed) : 0;
 
-          if (stored + failed === batch.length) {
+          if (stored + failed === batch.events.length) {
             this.sentCount += stored;
             this.droppedCount += failed;
             totalSent += stored;
             totalFailed += failed;
           } else {
             // Server returned malformed or mismatching count: protect invariant
-            const safeStored = Math.min(stored, batch.length);
-            const unaccountedFailed = batch.length - safeStored;
+            const safeStored = Math.min(stored, batch.events.length);
+            const unaccountedFailed = batch.events.length - safeStored;
 
             this.sentCount += safeStored;
             this.droppedCount += unaccountedFailed;
@@ -165,15 +180,15 @@ export class BatchFlusher {
 
             if (this.config.debug) {
               console.warn(
-                `[Log Friends] Server response mismatch. Stored: ${String(stored)}, Failed: ${String(failed)}, Batch: ${String(batch.length)}`,
+                `[Log Friends] Server response mismatch. Stored: ${String(stored)}, Failed: ${String(failed)}, Batch: ${String(batch.events.length)}`,
               );
             }
           }
         }
       } catch (err) {
-        this.inFlightCount -= batch.length;
-        this.droppedCount += batch.length;
-        totalFailed += batch.length;
+        this.inFlightCount -= batch.events.length;
+        this.droppedCount += batch.events.length;
+        totalFailed += batch.events.length;
         lastError = err instanceof Error ? err : new Error(String(err));
 
         this.config.onError(lastError, "BatchFlusher.sendWithRetry");
@@ -181,6 +196,10 @@ export class BatchFlusher {
         if (this.config.debug) {
           console.error("[Log Friends] Failed to flush batch after retries:", lastError);
         }
+      } finally {
+        // Queue removal does not mean the objects disappeared from V8. Keep the
+        // payload budget reserved until HTTP delivery/retries have completed.
+        this.queue.releaseBatch(batch.byteSize);
       }
     }
 

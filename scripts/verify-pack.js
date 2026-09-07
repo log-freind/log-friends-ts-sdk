@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 
 const rootDir = path.resolve(".");
+const require = createRequire(import.meta.url);
 
 const requiredFiles = [
   "README.md",
@@ -11,6 +13,10 @@ const requiredFiles = [
   "dist/index.cjs",
   "dist/index.d.ts",
   "dist/index.d.cts",
+  "dist/version.js",
+  "dist/version.cjs",
+  "dist/version.d.ts",
+  "dist/version.d.cts",
   "dist/browser/index.js",
   "dist/browser/index.cjs",
   "dist/browser/index.d.ts",
@@ -64,6 +70,21 @@ if (!pkg.publishConfig || pkg.publishConfig.access !== "public") {
 
 if (!pkg.files || !pkg.files.includes("dist") || !pkg.files.includes("LICENSE")) {
   console.error("❌ package.json files array must include 'dist' and 'LICENSE'");
+  process.exit(1);
+}
+
+const builtVersionSource = fs.readFileSync(path.join(rootDir, "dist/version.js"), "utf8");
+if (!builtVersionSource.includes(`SDK_VERSION = "${String(pkg.version)}"`)) {
+  console.error(`❌ src/version.ts must match package.json version ${String(pkg.version)}`);
+  process.exit(1);
+}
+
+const discoveryCjs = require(path.join(rootDir, "dist/discovery/index.cjs"));
+if (
+  typeof discoveryCjs.registerAgent !== "function" ||
+  typeof discoveryCjs.reportDiscoveredEvents !== "function"
+) {
+  console.error("❌ discovery export must expose registerAgent and reportDiscoveredEvents");
   process.exit(1);
 }
 

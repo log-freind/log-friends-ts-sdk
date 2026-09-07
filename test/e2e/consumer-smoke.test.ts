@@ -17,6 +17,10 @@ describe("consumer-smoke", () => {
 
     const nodeMod = await import("../../src/node/index.js");
     expect(nodeMod.createNodeClient).toBeDefined();
+
+    const discoveryMod = await import("../../src/discovery/index.js");
+    expect(discoveryMod.registerAgent).toBeDefined();
+    expect(discoveryMod.reportDiscoveredEvents).toBeDefined();
   });
 
   it("verifies built CommonJS entrypoints if dist has been compiled", () => {
@@ -37,6 +41,7 @@ describe("consumer-smoke", () => {
 
       const cjsNode = require(distNode);
       expect(cjsNode.createNodeClient).toBeDefined();
+
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
       if (code !== "MODULE_NOT_FOUND") {

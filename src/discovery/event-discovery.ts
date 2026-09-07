@@ -95,7 +95,7 @@ export async function reportDiscoveredEvents(
   const ingestUrl = clientConfig.ingestUrl;
   const workerId = clientConfig.workerId;
   const appName = options.appName ?? workerId;
-  const appVersion = options.appVersion ?? "1.0.0";
+  const appVersion = options.appVersion;
 
   // Build target URL
   const baseUrl = ingestUrl.replace(/\/ingest\/?$/, "");

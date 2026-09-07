@@ -29,6 +29,23 @@ describe("event-sanitizer", () => {
     expect(id1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
+  it("falls back when runtime crypto is unavailable", () => {
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined });
+
+    try {
+      expect(generateEventId()).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+    } finally {
+      if (cryptoDescriptor) {
+        Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
+      } else {
+        delete (globalThis as { crypto?: Crypto }).crypto;
+      }
+    }
+  });
+
   it("sanitizes circular references without throwing", () => {
     const obj: Record<string, unknown> = { name: "test", level: 1 };
     obj.self = obj;
