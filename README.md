@@ -1,252 +1,137 @@
-# @logfriends/sdk
+# Log Friends TypeScript SDK
 
-Log Friends Multi-Runtime TypeScript Client SDK for **Browser**, **Mobile App**, and **Node.js**.
+Node.js, 브라우저, JavaScript 모바일 앱에서 발생한 이벤트를 Console로 보내는 SDK입니다.
+현재 저장소의 패키지 버전은 `@logfriends/sdk 1.0.12`입니다.
 
-## Overview
+| 실행 환경 | 가져올 모듈 | 사용 예 |
+|---|---|---|
+| Node.js | `@logfriends/sdk/node` | 서버 이벤트 수집 |
+| 브라우저 | `@logfriends/sdk/browser` | 사용자 행동과 페이지·컴포넌트 위치 수집 |
+| JavaScript 모바일 | `@logfriends/sdk/mobile` | 앱 이벤트 수집, 저장소·생명주기 어댑터 연결 |
 
-- **Lightweight & Zero-Dependency**: Works seamlessly across browsers, React Native/Flutter/iOS/Android webviews, and Node.js backend runtimes.
-- **Kotlin-Aligned `@LogEvent` & `@LogField`**: Method and parameter decorators with automatic purpose/description metadata and `[REDACTED]` masking.
-- **Client Schema Definition (`defineEvent`)**: Type-safe event schemas with parameter descriptions and IDE hover tooltips for React/Next.js/React Native.
-- **Log Catalog & Schema Reporting**: Explicit Agent registration followed by `reportDiscoveredEvents()` to Console (`/api/agents/{agentId}/discovered-log-events`).
-- **Fail-Safe Operation**: SDK errors or network degradation never block or crash host application execution.
-- **Session & Inactivity Lifecycle**:
-  - **Browser**: Tab-persistent session storage with automatic 30-minute inactivity rotation and `pagehide`/`visibilitychange` keepalive flush.
-  - **Mobile**: Separation between persistent `appInstanceId` and execution `sessionId`, foreground/background flush adapters.
-  - **Node.js**: Process signal hooks (`SIGTERM`, `SIGINT`, `beforeExit`) with bounded shutdown flush.
-- **Bounded Queue & Protection**: Circular reference protection, depth limits, payload size limits, `DROP_OLDEST` / `DROP_NEWEST` overflow policies.
+Swift, Kotlin, Dart용 네이티브 SDK는 아닙니다.
+Spring Boot 서비스에는 [Kotlin SDK](https://github.com/log-freind/log-friends-kt-sdk)를 사용하세요.
 
-## Installation
+## 설치
+
+Node.js 모듈은 Node.js 18 이상을 요구합니다. 먼저 [Console](https://github.com/log-freind/log-friends-console)을 실행하세요.
 
 ```bash
 npm install @logfriends/sdk
 ```
 
----
+설치된 버전은 `npm ls @logfriends/sdk`로 확인할 수 있습니다.
+저장소의 작업 내용과 npm에 배포된 버전은 다를 수 있습니다.
 
-## 1. Backend / Class Services (`@LogEvent`, `@LogField`, `@LogMasked`)
+## Node.js에서 첫 이벤트 보내기
+
+아래 코드는 ESM 모듈 기준입니다.
 
 ```typescript
 import { createNodeClient } from "@logfriends/sdk/node";
-import { setGlobalClient, LogEvent, LogField, LogMasked } from "@logfriends/sdk/decorators";
-import { registerAgent, reportDiscoveredEvents } from "@logfriends/sdk/discovery";
+import { registerAgent } from "@logfriends/sdk/discovery";
 
-// 1. Initialize one server client
-const logfriends = createNodeClient({
+const client = createNodeClient({
   ingestUrl: "http://localhost:8080/ingest",
-  workerId: "order-service",
+  workerId: "product-api-local-1",
+  batchSize: 20,
 });
-setGlobalClient(logfriends);
 
-// 2. Decorate class service methods and parameters
-export class OrderService {
-  @LogEvent({
-    name: "orderCreated",
-    description: "사용자가 장바구니에서 결제를 완료했을 때 발생하는 비즈니스 이벤트",
-    includeResult: true,
-  })
-  async createOrder(
-    @LogField({ name: "orderId", description: "주문 고유 식별자", required: true })
-    orderId: string,
+try {
+  const registration = await registerAgent(client, {
+    appName: "product-api",
+    sourceType: "NODE",
+  });
+  if (!registration.success) throw registration.error;
 
-    @LogField({ name: "amount", description: "최종 실결제 금액 (KRW)", type: "number" })
-    amount: number,
-
-    @LogMasked("secretPin")
-    secretPin: string,
-  ) {
-    // Business logic...
-    return { orderId, status: "PAID" };
-  }
+  client.track("productViewed", { productId: "PRD-001" });
+  console.log(await client.flush());
+} finally {
+  await client.shutdown();
 }
+```
 
-// 3. After decorated modules have been imported, register/refresh the Agent and report schemas.
-const registration = await registerAgent(logfriends, {
-  appName: "shop",
-  appVersion: "1.0.0",
-  sourceType: "NODE",
+Console Web의 Raw Events에서 `productViewed`를 조회하세요.
+`track()`의 반환값은 큐 적재 여부이며 DB 저장 성공을 뜻하지 않습니다.
+
+Agent 등록은 앱과 worker를 Catalog에서 연결하기 위해 필요합니다.
+코드 정의까지 보고하려면 데코레이터가 선언된 모듈을 먼저 로드한 뒤
+`reportDiscoveredEvents(client, { appName, agentId })`를 호출합니다.
+보고된 정의는 힌트이며 LogSpec으로 자동 확정되지 않습니다.
+
+## 브라우저에서 사용하기
+
+앱 초기화 시 클라이언트를 한 번 만들고 사용자 행동이 발생한 지점에서 호출하세요.
+
+```typescript
+import { createBrowserClient } from "@logfriends/sdk/browser";
+
+const client = createBrowserClient({
+  ingestUrl: "https://your-console.example/ingest",
+  workerId: "shop-web",
 });
 
-if (registration.success && registration.agentId !== undefined) {
-  await reportDiscoveredEvents(logfriends, {
-    appName: "shop",
-    appVersion: "1.0.0",
-    agentId: registration.agentId,
+function onProductClick(productId: string) {
+  client.track("productClicked", { productId }, {
+    uiContext: {
+      component: "ProductCard",
+      componentPath: ["ProductList", "ProductCard"],
+    },
   });
 }
 ```
 
----
+`your-console.example`은 실제 Console 주소로 바꿔야 합니다.
+현재 페이지 정보는 자동으로 붙지만 컴포넌트 위치는 위처럼 직접 지정합니다.
+Console Web의 Frontend Tree는 이 정보를 사용합니다.
 
-## 2. Frontend / Client Runtime (`defineEvent`, `trackEvent`)
+브라우저의 Agent 자동 등록은 기본 비활성화입니다. Catalog에 연결할 공통
+`workerId`는 별도로 등록하고 사용자나 탭마다 Agent를 만들지 마세요.
+Console CORS에 웹 앱의 origin을 허용해야 하며, HTTPS 페이지에서 HTTP Console을 호출하면 차단될 수 있습니다.
 
-```tsx
-import { createBrowserClient } from "@logfriends/sdk/browser";
-import { defineEvent, trackEvent } from "@logfriends/sdk/schema";
+## 배치와 메모리 제한
 
-// 1. Declare event schema with parameter descriptions (purpose)
-export const ShopEvents = {
-  orderCompleted: defineEvent<{
-    orderId: string;
-    amount: number;
-    couponCode?: string;
-  }>({
-    name: "orderCompleted",
-    description: "사용자가 장바구니에서 최종 결제를 성공했을 때 발생",
-    fields: {
-      orderId: { description: "주문 고유 식별자", type: "string", required: true },
-      amount: { description: "최종 실결제 금액 (KRW)", type: "number", required: true },
-      couponCode: { description: "적용된 프로모션 쿠폰", type: "string", required: false },
-    },
-  }),
-};
+| 설정 | 기본값 |
+|---|---|
+| `batchSize` / `flushIntervalMs` | 20건 / 5초 |
+| `maxQueueSize` | 1,000건 |
+| `maxQueueBytes` | 2MiB |
+| `maxEventBytes` / `maxBatchBytes` | 32KiB / 256KiB |
+| `queueOverflowPolicy` | `DROP_OLDEST` |
+| `maxRetries` | 3회 |
 
-// 2. Initialize client
-const logfriends = createBrowserClient({
-  ingestUrl: "https://console.logfriends.local/ingest",
-  // Compatibility field: use one stable logical source ID, never a user/tab ID.
-  workerId: "shop-web",
-});
+브라우저와 모바일은 기본적으로 이벤트 적재 후 즉시 flush를 시도합니다.
+**현재 Console은 HTTP 요청당 최대 50건**이므로 `batchSize`를 50보다 크게 지정하지 마세요.
+Console 요청 제한에도 유의해야 합니다.
 
-// 3. Track events type-safely in React components / handlers
-function CheckoutButton({ orderId, total }) {
-  return (
-    <button
-      onClick={() => {
-        // 💡 Hover over each field in IDE to view parameter purpose & description
-        trackEvent(logfriends, ShopEvents.orderCompleted, {
-          orderId,
-          amount: total,
-          couponCode: "WELCOME2026",
-        }, {
-          // page is automatic in Browser; this makes the Console tree explicit.
-          uiContext: { componentPath: ["CheckoutForm", "CheckoutButton"] },
-        });
-      }}
-    >
-      결제하기
-    </button>
-  );
-}
-```
+`maxQueueBytes`는 큐와 전송 중 이벤트의 **직렬화된 UTF-8 크기** 기준이지 실제 힙 점유량이 아닙니다.
+Node.js는 `heapGuard: { maxHeapUsageRatio: 0.85 }`를 지정해 프로세스 전체 V8 힙 압력을 추가로 확인할 수 있습니다.
 
-Browser events automatically carry the current `page` path. Pass `uiContext.componentPath`
-from the page component to the emitting component when you want Console to group events as a
-Frontend Tree. This context is stored separately from the event payload and does not become a
-Log Catalog field.
+Node.js에서는 다음 환경변수가 생성자 설정보다 우선합니다:
+`LOGFRIENDS_INGEST_URL`, `LOGFRIENDS_WORKER_ID`, `LOGFRIENDS_BATCH_SIZE`,
+`LOGFRIENDS_BATCH_INTERVAL_MS`, `LOGFRIENDS_QUEUE_CAPACITY`, `LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES`.
 
----
+## 주의할 점
 
-## 3. Mobile App Runtime (React Native, Capacitor, etc.)
+- 이벤트는 메모리 큐에 보관합니다. 초과·전송 실패·강제 종료로 유실될 수 있어 결제 원장을 대체하지 않습니다.
+- 페이지 종료 시 전송은 최선의 시도입니다. `sendBeacon` 성공도 DB 저장 완료가 아닙니다.
+- 모바일 저장소 어댑터는 앱 인스턴스 ID 보관용이며 이벤트의 디스크 영속화를 제공하지 않습니다.
+- `defineEvent`의 타입 선언은 서버가 payload를 런타임 검증한다는 뜻이 아닙니다.
+- 개인정보나 토큰은 payload에 넣기 전에 제거하세요.
 
-```typescript
-import { createMobileClient } from "@logfriends/sdk/mobile";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AppState } from "react-native";
+큐 상태는 `client.getStats()`, Node.js 힙 관측은 `client.getHeapPressure()`로 확인합니다.
+상세 옵션은 [공통 타입](src/core/types.ts), [Node 클라이언트](src/node/node-client.ts),
+[Browser 클라이언트](src/browser/browser-client.ts), [Mobile 클라이언트](src/mobile/mobile-client.ts)를 참고하세요.
 
-const logfriends = createMobileClient({
-  ingestUrl: "https://console.logfriends.local/ingest",
-  workerId: "mobile-ios-prod",
-  storageAdapter: {
-    getItem: (key) => AsyncStorage.getItem(key),
-    setItem: (key, val) => AsyncStorage.setItem(key, val),
-    removeItem: (key) => AsyncStorage.removeItem(key),
-  },
-  lifecycleAdapter: {
-    onForeground: (cb) => {
-      const sub = AppState.addEventListener("change", (state) => {
-        if (state === "active") cb();
-      });
-      return () => sub.remove();
-    },
-  },
-});
-
-logfriends.track("itemFavorited", { itemId: "item-77" });
-```
-
----
-
-## Queue 메모리 경계와 Node V8 보호
-
-모든 런타임에서 SDK는 이벤트를 JSON으로 직렬화했을 때의 UTF-8 byte 크기를 기준으로
-Queue를 제한한다. 이 값은 V8/JVM의 실제 객체 heap 크기가 아니라, Browser·Node·Mobile에
-공통으로 적용할 수 있는 payload 예산이다.
-
-| 설정 | 기본값 | 의미 |
-|---|---:|---|
-| `maxQueueSize` | 1,000 | Queue 이벤트 개수 상한 |
-| `maxQueueBytes` | 2 MiB | Queue와 HTTP 전송 중 batch를 합친 UTF-8 payload 예산 |
-| `maxEventBytes` | 32 KiB | 이벤트 하나의 최대 UTF-8 payload 크기 |
-| `maxBatchBytes` | 256 KiB | HTTP batch 하나의 최대 UTF-8 payload 크기 |
-
-batch를 Queue에서 꺼낸 뒤에도 HTTP 전송과 재시도가 끝날 때까지 해당 byte 예산은
-`inFlightBytes`로 예약된다. 따라서 느린 Console 전송 때문에 Queue와 전송 중 batch가
-합쳐져 예산을 넘는 것을 막는다.
-
-Node 서버에서는 선택적으로 V8 전체 heap 압력도 2차 차단선으로 쓸 수 있다.
-
-```ts
-const logfriends = createNodeClient({
-  ingestUrl: "http://localhost:8080/ingest",
-  workerId: "order-service",
-  heapGuard: {
-    maxHeapUsageRatio: 0.85,
-    checkIntervalMs: 1_000,
-  },
-});
-```
-
-`heapGuard`는 설정한 경우에만 동작한다. Node의 `used_heap_size / heap_size_limit`이
-상한 이상이면 새 Log Friends 이벤트를 drop한다. V8 조회는 매 이벤트가 아니라 기본
-1초마다 한 번만 갱신한다.
-
-Node 배포에서는 Kotlin SDK와 같은 환경 변수로 batch 시간·개수·byte 예산을 설정할 수
-있다. 환경 변수가 생성자 옵션보다 우선한다.
+## 개발
 
 ```bash
-export LOGFRIENDS_INGEST_URL=https://console.example.com/ingest
-export LOGFRIENDS_WORKER_ID=order-service-1
-export LOGFRIENDS_BATCH_SIZE=100
-export LOGFRIENDS_BATCH_INTERVAL_MS=500
-export LOGFRIENDS_QUEUE_CAPACITY=10000
-export LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES=33554432
+npm ci
+npm run lint
+npm test
+npm run build
+npm run verify-pack
 ```
 
-`LOGFRIENDS_QUEUE_MEMORY_BUDGET_BYTES`는 실제 V8 객체 heap 크기가 아니라, Queue와
-in-flight batch에 보유한 UTF-8 JSON payload byte 예산이다. Browser/Mobile SDK는
-`process.env`를 읽지 않으므로 동일한 값을 생성자 옵션으로 넘긴다.
-
-```ts
-const stats = logfriends.getStats();
-
-console.log(stats.queuedBytes);
-console.log(stats.inFlightBytes);
-console.log(stats.retainedBytes);
-console.log(stats.maxQueueBytes);
-console.log(logfriends.getHeapPressure());
-```
-
-`retainedBytes`는 SDK가 관리하는 UTF-8 payload 예산이고, `getHeapPressure()`는 Node
-프로세스 전체의 V8 heap 상태다. 두 값을 같은 실제 객체 heap 크기로 해석하면 안 된다.
-
-### Node V8 heap 탐색 진단
-
-개발 환경에서 아래 테스트를 실행하면 Queue 적재 전·후 V8 heap snapshot을 임시 폴더에
-쓴다. Snapshot에는 `LogFriendsQueueEntry`라는 이름의 객체가 남아 Chrome DevTools의
-Memory 탭에서 Queue entry와 retaining path를 탐색할 수 있다. 테스트 출력은
-`queueReachableShallowBytes`와 SDK의 `estimatedPayloadBytes`도 함께 보여 주므로, 특정
-payload에서 추정 예산이 실제 V8 그래프 대비 얼마나 보수적인지 비교할 수 있다.
-
-```bash
-LOGFRIENDS_HEAP_DIAGNOSTIC=true \
-  npx vitest run test/node/node-heap-diagnostic.test.ts --reporter=verbose
-```
-
-이 진단은 snapshot 생성과 JSON 분석 때문에 무겁다. 운영 요청 경로나 일반 테스트에는
-실행하지 않는다.
-
----
-
-## License
-
-Apache License 2.0. See [LICENSE](./LICENSE).
+[Console](https://github.com/log-freind/log-friends-console) ·
+[Console Web](https://github.com/log-freind/log-friends-console-web) · [Apache-2.0](LICENSE)
